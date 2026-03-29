@@ -1,22 +1,29 @@
 import { EventEmitter } from "node:events";
-import { TS3Connection, type CommandResult } from "./connection.js";
-import { VoiceConnection, CODEC_OPUS_MUSIC } from "./voice.js";
 import {
-  generateIdentity,
-  importIdentity,
-  exportIdentity,
-  type TS3Identity,
-} from "./identity.js";
+  Client as TS3FullClient,
+  generateIdentity as genTS3Identity,
+  identityFromString,
+  sendTextMessage,
+  listChannels,
+  listClients,
+  clientMove,
+  type Identity,
+  type TextMessage,
+  type ClientInfo,
+} from "@honeybbq/teamspeak-client";
 import type { Logger } from "../logger.js";
+
+export { CODEC_OPUS_MUSIC } from "./voice.js";
 
 export interface TS3ClientOptions {
   host: string;
   port: number; // Voice/virtual server port (default 9987)
-  queryPort: number; // ServerQuery port (default 10011)
+  queryPort: number; // ServerQuery port (default 10011) — unused now, kept for compat
   nickname: string;
-  identity?: string; // Exported identity JSON, or undefined to generate new
+  identity?: string; // Exported identity string, or undefined to generate new
   defaultChannel?: string;
   channelPassword?: string;
+  serverPassword?: string;
 }
 
 export interface TS3TextMessage {
@@ -28,84 +35,65 @@ export interface TS3TextMessage {
 }
 
 export class TS3Client extends EventEmitter {
-  private connection: TS3Connection;
-  private voice: VoiceConnection;
-  private identity: TS3Identity;
+  private client: TS3FullClient | null = null;
+  private identity: Identity;
   private clientId = 0;
-  private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
   private logger: Logger;
 
   constructor(private options: TS3ClientOptions, logger: Logger) {
     super();
     this.logger = logger;
 
-    this.connection = new TS3Connection({
-      host: options.host,
-      port: options.queryPort,
-    });
-
-    this.voice = new VoiceConnection({
-      host: options.host,
-      port: options.port,
-    });
-
-    this.connection.on("error", (err) => {
-      this.logger.error({ err }, "TCP connection error");
-      this.emit("error", err);
-    });
-
-    this.voice.on("error", (err) => {
-      this.logger.error({ err }, "UDP voice error");
-      this.emit("error", err);
-    });
-
-    this.connection.on(
-      "notify:textmessage",
-      (data: Record<string, string>) => {
-        const msg: TS3TextMessage = {
-          invokerName: data.invokername ?? "",
-          invokerId: data.invokerid ?? "",
-          invokerUid: data.invokeruid ?? "",
-          message: data.msg ?? "",
-          targetMode: parseInt(data.targetmode ?? "0", 10),
-        };
-        this.emit("textMessage", msg);
-      }
-    );
-
-    this.connection.on("close", () => {
-      this.logger.warn("Connection closed");
-      this.emit("disconnected");
-    });
-
     if (options.identity) {
-      this.identity = importIdentity(options.identity);
+      this.identity = identityFromString(options.identity);
     } else {
-      this.identity = generateIdentity();
+      this.identity = genTS3Identity(8);
     }
   }
 
   async connect(): Promise<void> {
-    this.logger.info(
-      { host: this.options.host, port: this.options.port },
-      "Connecting to TeamSpeak server"
-    );
+    const addr = `${this.options.host}:${this.options.port}`;
+    this.logger.info({ addr }, "Connecting to TeamSpeak server (full client protocol)");
 
-    await this.connection.connect();
-    this.logger.debug("TCP connection established");
-
-    await this.sendCommand("use", { port: this.options.port });
-
-    await this.sendCommand("clientupdate", {
-      client_nickname: this.options.nickname,
+    this.client = new TS3FullClient(this.identity, addr, this.options.nickname, {
+      logger: {
+        debug: (msg) => this.logger.debug(msg),
+        info: (msg) => this.logger.info(msg),
+        warn: (msg) => this.logger.warn(msg),
+        error: (msg) => this.logger.error(msg),
+      },
     });
 
-    const whoami = await this.sendCommand("whoami", {});
-    if (whoami.data.length > 0) {
-      this.clientId = parseInt(whoami.data[0].client_id ?? "0", 10);
-      this.logger.info({ clientId: this.clientId }, "Logged in");
-    }
+    this.client.on("textMessage", (msg: TextMessage) => {
+      const tsMsg: TS3TextMessage = {
+        invokerName: msg.invokerName,
+        invokerId: String(msg.invokerID),
+        invokerUid: msg.invokerUID,
+        message: msg.message,
+        targetMode: msg.targetMode,
+      };
+      this.emit("textMessage", tsMsg);
+    });
 
+    this.client.on("disconnected", (err) => {
+      this.logger.warn({ err: err?.message }, "Connection closed");
+      this.clientId = 0;
+      this.emit("disconnected");
+    });
+
+    this.client.on("clientEnter", (info: ClientInfo) => {
+      this.logger.debug(
+        { nickname: info.nickname, id: info.id },
+        "Client entered"
+      );
+    });
+
+    await this.client.connect();
+    await this.client.waitConnected();
+    this.clientId = this.client.clientID();
+    this.logger.info({ clientId: this.clientId }, "Logged in (visible client)");
+
+    // Join default channel if specified
     if (this.options.defaultChannel) {
       await this.joinChannel(
         this.options.defaultChannel,
@@ -113,72 +101,65 @@ export class TS3Client extends EventEmitter {
       );
     }
 
-    await this.voice.connect();
-    this.voice.setClientId(this.clientId);
-    this.logger.debug("UDP voice connection established");
-
-    await this.sendCommand("servernotifyregister", { event: "textchannel" });
-    await this.sendCommand("servernotifyregister", { event: "textprivate" });
-
-    this.keepAliveInterval = setInterval(() => {
-      this.voice.sendKeepAlive();
-    });
-
     this.emit("connected");
   }
 
-  async sendCommand(
-    command: string,
-    params: Record<string, string | number>
-  ): Promise<CommandResult> {
-    return this.connection.send(command, params);
-  }
-
   async joinChannel(channelName: string, password?: string): Promise<void> {
-    const channels = await this.sendCommand("channellist", {});
-    const channel = channels.data.find(
-      (ch) => ch.channel_name === channelName
-    );
+    if (!this.client) return;
 
-    if (!channel) {
-      this.logger.warn({ channelName }, "Channel not found");
-      return;
+    try {
+      const channels = await listChannels(this.client);
+      const channel = channels.find((ch) => ch.name === channelName);
+
+      if (!channel) {
+        this.logger.warn({ channelName }, "Channel not found");
+        return;
+      }
+
+      await clientMove(
+        this.client,
+        this.clientId,
+        channel.id,
+        password
+      );
+      this.logger.info(
+        { channelName, cid: channel.id.toString() },
+        "Joined channel"
+      );
+    } catch (err) {
+      this.logger.error({ err, channelName }, "Failed to join channel");
     }
-
-    const params: Record<string, string | number> = {
-      cid: channel.cid,
-      clid: this.clientId,
-    };
-    if (password) {
-      params.cpw = password;
-    }
-
-    await this.sendCommand("clientmove", params);
-    this.logger.info({ channelName, cid: channel.cid }, "Joined channel");
   }
 
   async sendTextMessage(
     message: string,
     targetMode: number = 2
   ): Promise<void> {
-    await this.sendCommand("sendtextmessage", {
-      targetmode: targetMode,
-      target: targetMode === 2 ? 0 : this.clientId,
-      msg: message,
-    });
+    if (!this.client) return;
+    // targetMode 2 = channel, target 0 = current channel
+    const target = targetMode === 2 ? BigInt(0) : BigInt(this.clientId);
+    await sendTextMessage(this.client, targetMode, target, message);
   }
 
-  async getClientsInChannel(): Promise<Record<string, string>[]> {
-    const result = await this.sendCommand("clientlist", {});
-    return result.data;
+  async getClientsInChannel(): Promise<ClientInfo[]> {
+    if (!this.client) return [];
+    try {
+      const allClients = await listClients(this.client);
+      const myChannelId = this.client.channelID();
+      return allClients.filter((c) => c.channelID === myChannelId);
+    } catch {
+      return [];
+    }
   }
 
   sendVoiceData(opusFrame: Buffer): void {
-    this.voice.sendVoicePacket(opusFrame, CODEC_OPUS_MUSIC);
+    if (!this.client) return;
+    // Codec 5 = CODEC_OPUS_MUSIC
+    this.client.sendVoice(opusFrame, 5);
   }
 
   getIdentityExport(): string {
-    return exportIdentity(this.identity);
+    return this.identity.toString();
   }
 
   getClientId(): number {
@@ -186,12 +167,11 @@ export class TS3Client extends EventEmitter {
   }
 
   disconnect(): void {
-    if (this.keepAliveInterval) {
-      clearInterval(this.keepAliveInterval);
-      this.keepAliveInterval = null;
+    if (this.client) {
+      this.client.disconnect().catch(() => {});
+      this.client = null;
     }
-    this.connection.disconnect();
-    this.voice.disconnect();
+    this.clientId = 0;
     this.logger.info("Disconnected from TeamSpeak server");
   }
 }
