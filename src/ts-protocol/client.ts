@@ -49,6 +49,35 @@ export class TS3Client extends EventEmitter {
       port: options.port,
     });
 
+    this.connection.on("error", (err) => {
+      this.logger.error({ err }, "TCP connection error");
+      this.emit("error", err);
+    });
+
+    this.voice.on("error", (err) => {
+      this.logger.error({ err }, "UDP voice error");
+      this.emit("error", err);
+    });
+
+    this.connection.on(
+      "notify:textmessage",
+      (data: Record<string, string>) => {
+        const msg: TS3TextMessage = {
+          invokerName: data.invokername ?? "",
+          invokerId: data.invokerid ?? "",
+          invokerUid: data.invokeruid ?? "",
+          message: data.msg ?? "",
+          targetMode: parseInt(data.targetmode ?? "0", 10),
+        };
+        this.emit("textMessage", msg);
+      }
+    );
+
+    this.connection.on("close", () => {
+      this.logger.warn("Connection closed");
+      this.emit("disconnected");
+    });
+
     if (options.identity) {
       this.identity = importIdentity(options.identity);
     } else {
@@ -91,27 +120,8 @@ export class TS3Client extends EventEmitter {
     await this.sendCommand("servernotifyregister", { event: "textchannel" });
     await this.sendCommand("servernotifyregister", { event: "textprivate" });
 
-    this.connection.on(
-      "notify:textmessage",
-      (data: Record<string, string>) => {
-        const msg: TS3TextMessage = {
-          invokerName: data.invokername ?? "",
-          invokerId: data.invokerid ?? "",
-          invokerUid: data.invokeruid ?? "",
-          message: data.msg ?? "",
-          targetMode: parseInt(data.targetmode ?? "0", 10),
-        };
-        this.emit("textMessage", msg);
-      }
-    );
-
     this.keepAliveInterval = setInterval(() => {
       this.voice.sendKeepAlive();
-    }, 5000);
-
-    this.connection.on("close", () => {
-      this.logger.warn("Connection closed");
-      this.emit("disconnected");
     });
 
     this.emit("connected");

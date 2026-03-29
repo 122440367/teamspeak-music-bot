@@ -48,6 +48,7 @@ export class TS3Connection extends EventEmitter {
       });
       this.socket.on("close", () => {
         this.connected = false;
+        this.drainCommandQueue(new Error("Connection closed"));
         this.emit("close");
       });
     });
@@ -126,6 +127,15 @@ export class TS3Connection extends EventEmitter {
       this.socket = null;
       this.connected = false;
     }
+    this.drainCommandQueue(new Error("Disconnected"));
+  }
+
+  private drainCommandQueue(error: Error): void {
+    for (const pending of this.commandQueue) {
+      pending.reject(error);
+    }
+    this.commandQueue = [];
+    this.responseLines = [];
   }
 
   isConnected(): boolean {

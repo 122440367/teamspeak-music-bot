@@ -62,12 +62,6 @@ export function decodeResponse(raw: string): Record<string, string>[] {
   });
 }
 
-export interface TS3Response {
-  errorId: number;
-  errorMessage: string;
-  data: Record<string, string>[];
-}
-
 export function parseErrorLine(line: string): { id: number; msg: string } {
   const decoded = decodeResponse(line.replace(/^error\s+/, ""))[0];
   return {
