@@ -11,17 +11,17 @@ export interface PlayerEvents {
 
 export type PlayerState = "idle" | "playing" | "paused";
 
-// ~5 seconds of 48kHz stereo 16-bit audio
-const PCM_HIGH_WATER_MARK = PCM_FRAME_BYTES * 250;
+const FRAME_DURATION_MS = 20;
 
 export class AudioPlayer extends EventEmitter {
   private ffmpeg: ChildProcess | null = null;
   private encoder: Encoder;
   private state: PlayerState = "idle";
   private volume = 75; // 0-100
-  private frameTimer: ReturnType<typeof setInterval> | null = null;
   private pcmBuffer: Buffer = Buffer.alloc(0);
   private logger: Logger;
+  private frameLoopRunning = false;
+  private nextFrameTime = 0;
 
   constructor(logger: Logger) {
     super();
@@ -32,7 +32,7 @@ export class AudioPlayer extends EventEmitter {
   play(url: string): void {
     this.stop();
 
-    this.logger.info({ url }, "Starting playback");
+    this.logger.info({ url: url.slice(0, 80) }, "Starting playback");
 
     this.ffmpeg = spawn(
       "ffmpeg",
@@ -44,26 +44,24 @@ export class AudioPlayer extends EventEmitter {
         "-f", "s16le",
         "-ar", "48000",
         "-ac", "2",
-        "-af", `volume=${this.volume / 100}`,
+        "-acodec", "pcm_s16le",
         "-",
       ],
-      { stdio: ["ignore", "pipe", "ignore"] }
+      { stdio: ["ignore", "pipe", "pipe"] }
     );
+
+    this.ffmpeg.stderr!.on("data", () => {
+      // Suppress FFmpeg stderr output
+    });
 
     this.ffmpeg.stdout!.on("data", (chunk: Buffer) => {
       this.pcmBuffer = Buffer.concat([this.pcmBuffer, chunk]);
-      // Backpressure: pause FFmpeg if buffer is too large
-      if (this.pcmBuffer.length > PCM_HIGH_WATER_MARK && this.ffmpeg?.stdout) {
-        this.ffmpeg.stdout.pause();
-      }
     });
 
     this.ffmpeg.on("close", (code) => {
       this.logger.debug({ code }, "FFmpeg process closed");
-      if (this.state === "playing") {
-        this.flushRemainingFrames();
-        this.state = "idle";
-        this.emit("trackEnd");
+      if (this.state === "playing" || this.state === "paused") {
+        // Let the frame loop drain remaining frames, then it will emit trackEnd
       }
     });
 
@@ -73,11 +71,49 @@ export class AudioPlayer extends EventEmitter {
     });
 
     this.state = "playing";
+    this.startFrameLoop();
+  }
 
-    this.frameTimer = setInterval(() => {
-      if (this.state !== "playing") return;
-      this.sendNextFrame();
-    }, 20);
+  /**
+   * High-precision frame sending loop using drift-correcting setTimeout.
+   * Much more accurate than setInterval which drifts ~4-16ms on Windows.
+   */
+  private startFrameLoop(): void {
+    if (this.frameLoopRunning) return;
+    this.frameLoopRunning = true;
+    this.nextFrameTime = performance.now();
+    this.scheduleNextFrame();
+  }
+
+  private scheduleNextFrame(): void {
+    if (!this.frameLoopRunning) return;
+
+    this.nextFrameTime += FRAME_DURATION_MS;
+    const now = performance.now();
+    const delay = Math.max(0, this.nextFrameTime - now);
+
+    setTimeout(() => {
+      if (!this.frameLoopRunning) return;
+
+      if (this.state === "playing") {
+        this.sendNextFrame();
+      } else if (this.state === "paused") {
+        // Keep the loop alive but adjust timing to avoid drift accumulation
+        this.nextFrameTime = performance.now();
+      }
+
+      // Check if we should stop (FFmpeg done + buffer empty)
+      if (!this.ffmpeg && this.pcmBuffer.length < PCM_FRAME_BYTES) {
+        this.frameLoopRunning = false;
+        if (this.state !== "idle") {
+          this.state = "idle";
+          this.emit("trackEnd");
+        }
+        return;
+      }
+
+      this.scheduleNextFrame();
+    }, delay);
   }
 
   private sendNextFrame(): void {
@@ -86,22 +122,25 @@ export class AudioPlayer extends EventEmitter {
     const pcmFrame = this.pcmBuffer.subarray(0, PCM_FRAME_BYTES);
     this.pcmBuffer = this.pcmBuffer.subarray(PCM_FRAME_BYTES);
 
-    // Resume FFmpeg if buffer drained below threshold
-    if (
-      this.pcmBuffer.length < PCM_HIGH_WATER_MARK / 2 &&
-      this.ffmpeg?.stdout?.isPaused()
-    ) {
-      this.ffmpeg.stdout.resume();
-    }
-
-    const opusFrame = this.encoder.encode(Buffer.from(pcmFrame));
+    // Apply volume by scaling PCM samples directly
+    const adjusted = this.applyVolume(pcmFrame);
+    const opusFrame = this.encoder.encode(adjusted);
     this.emit("frame", opusFrame);
   }
 
-  private flushRemainingFrames(): void {
-    while (this.pcmBuffer.length >= PCM_FRAME_BYTES) {
-      this.sendNextFrame();
+  private applyVolume(pcm: Buffer): Buffer {
+    if (this.volume === 100) return Buffer.from(pcm);
+    const factor = this.volume / 100;
+    const out = Buffer.alloc(pcm.length);
+    for (let i = 0; i < pcm.length; i += 2) {
+      let sample = pcm.readInt16LE(i);
+      sample = Math.round(sample * factor);
+      // Clamp to 16-bit range
+      if (sample > 32767) sample = 32767;
+      else if (sample < -32768) sample = -32768;
+      out.writeInt16LE(sample, i);
     }
+    return out;
   }
 
   pause(): void {
@@ -114,15 +153,14 @@ export class AudioPlayer extends EventEmitter {
   resume(): void {
     if (this.state === "paused") {
       this.state = "playing";
+      // Reset timing to avoid burst of frames after unpause
+      this.nextFrameTime = performance.now();
       this.logger.debug("Playback resumed");
     }
   }
 
   stop(): void {
-    if (this.frameTimer) {
-      clearInterval(this.frameTimer);
-      this.frameTimer = null;
-    }
+    this.frameLoopRunning = false;
     if (this.ffmpeg) {
       this.ffmpeg.kill("SIGTERM");
       this.ffmpeg = null;
