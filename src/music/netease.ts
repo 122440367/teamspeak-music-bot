@@ -54,16 +54,35 @@ export function parseLyrics(lrc: string, tlyric?: string): LyricLine[] {
   return lines.sort((a, b) => a.time - b.time);
 }
 
+// NetEase quality levels: standard(128k) higher(192k) exhigh(320k) lossless(flac) hires(hi-res) jyeffect jymaster
+export const NETEASE_QUALITY_LEVELS = [
+  { value: "standard", label: "标准 (128kbps)", bitrate: 128 },
+  { value: "higher", label: "较高 (192kbps)", bitrate: 192 },
+  { value: "exhigh", label: "极高 (320kbps)", bitrate: 320 },
+  { value: "lossless", label: "无损 (FLAC)", bitrate: 900 },
+  { value: "hires", label: "Hi-Res", bitrate: 1500 },
+  { value: "jymaster", label: "超清母带", bitrate: 4000 },
+] as const;
+
 export class NeteaseProvider implements MusicProvider {
   readonly platform = "netease" as const;
   private api: AxiosInstance;
   private cookie = "";
+  private quality = "exhigh";
 
   constructor(baseUrl: string) {
     this.api = axios.create({
       baseURL: baseUrl,
       timeout: 10000,
     });
+  }
+
+  setQuality(quality: string): void {
+    this.quality = quality;
+  }
+
+  getQuality(): string {
+    return this.quality;
   }
 
   private get cookieParams(): Record<string, string> {
@@ -110,9 +129,10 @@ export class NeteaseProvider implements MusicProvider {
     return { songs, playlists, albums: [] };
   }
 
-  async getSongUrl(songId: string): Promise<string | null> {
+  async getSongUrl(songId: string, quality?: string): Promise<string | null> {
+    const level = quality ?? this.quality;
     const res = await this.api.get("/song/url/v1", {
-      params: { id: songId, level: "exhigh", ...this.cookieParams },
+      params: { id: songId, level, ...this.cookieParams },
     });
     return res.data?.data?.[0]?.url ?? null;
   }

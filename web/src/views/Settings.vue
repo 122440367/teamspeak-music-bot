@@ -195,6 +195,29 @@
       </div>
     </section>
 
+    <!-- Audio Quality -->
+    <section class="settings-section">
+      <h2 class="section-title">音质设置</h2>
+      <div class="setting-row">
+        <div class="setting-label">
+          <Icon icon="mdi:music-note-eighth" class="setting-icon" />
+          音源质量
+        </div>
+        <div class="quality-options">
+          <button
+            v-for="q in qualityLevels"
+            :key="q.value"
+            class="quality-btn"
+            :class="{ active: currentQuality === q.value }"
+            @click="setQuality(q.value)"
+          >
+            <div class="quality-name">{{ q.label }}</div>
+            <div class="quality-desc">{{ q.desc }}</div>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- Command Prefix -->
     <section class="settings-section">
       <h2 class="section-title">命令设置</h2>
@@ -226,6 +249,31 @@ const newBotServer = ref('');
 const neteaseCookie = ref('');
 const qqCookie = ref('');
 const commandPrefix = ref('!');
+
+// Audio quality
+const currentQuality = ref('exhigh');
+const qualityLevels = [
+  { value: 'standard', label: '标准', desc: '128kbps MP3' },
+  { value: 'higher', label: '较高', desc: '192kbps MP3' },
+  { value: 'exhigh', label: '极高', desc: '320kbps MP3' },
+  { value: 'lossless', label: '无损', desc: 'FLAC' },
+  { value: 'hires', label: 'Hi-Res', desc: '高解析度' },
+  { value: 'jymaster', label: '超清母带', desc: '最高质量' },
+];
+
+async function loadQuality() {
+  try {
+    const res = await axios.get('/api/music/quality');
+    currentQuality.value = res.data.netease || 'exhigh';
+  } catch { /* ignore */ }
+}
+
+async function setQuality(q: string) {
+  currentQuality.value = q;
+  try {
+    await axios.post('/api/music/quality', { quality: q });
+  } catch { /* ignore */ }
+}
 
 // Login mode: 'qr' | 'cookie' | null
 const neteaseLoginMode = ref<'qr' | 'cookie' | null>(null);
@@ -380,6 +428,7 @@ async function savePrefix() {
 
 onMounted(() => {
   checkAuthStatus();
+  loadQuality();
 });
 
 onUnmounted(() => {
@@ -651,6 +700,39 @@ onUnmounted(() => {
   outline: none;
   resize: vertical;
   &:focus { border-color: var(--color-primary); }
+}
+
+.quality-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.quality-btn {
+  padding: 12px;
+  background: var(--hover-bg);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  text-align: center;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+
+  &:hover { border-color: var(--border-color); }
+  &.active {
+    border-color: var(--color-primary);
+    background: rgba(51, 94, 234, 0.1);
+  }
+}
+
+.quality-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.quality-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 
 .prefix-input-wrap {

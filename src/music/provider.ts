@@ -57,7 +57,9 @@ export interface MusicProvider {
   readonly platform: "netease" | "qq";
 
   search(query: string, limit?: number): Promise<SearchResult>;
-  getSongUrl(songId: string): Promise<string | null>;
+  getSongUrl(songId: string, quality?: string): Promise<string | null>;
+  setQuality(quality: string): void;
+  getQuality(): string;
   getSongDetail(songId: string): Promise<Song | null>;
   getPlaylistSongs(playlistId: string): Promise<Song[]>;
   getRecommendPlaylists(): Promise<Playlist[]>;

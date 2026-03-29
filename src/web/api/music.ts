@@ -193,5 +193,30 @@ export function createMusicRouter(
     }
   });
 
+  // Get current quality
+  router.get("/quality", (_req, res) => {
+    res.json({
+      netease: neteaseProvider.getQuality(),
+      qq: qqProvider.getQuality(),
+    });
+  });
+
+  // Set quality
+  router.post("/quality", (req, res) => {
+    const { quality, platform } = req.body;
+    if (!quality) {
+      res.status(400).json({ error: "quality is required" });
+      return;
+    }
+    if (!platform || platform === "netease") {
+      neteaseProvider.setQuality(quality);
+    }
+    if (!platform || platform === "qq") {
+      qqProvider.setQuality(quality);
+    }
+    logger.info({ quality, platform }, "Audio quality changed");
+    res.json({ success: true, quality });
+  });
+
   return router;
 }

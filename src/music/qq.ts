@@ -14,12 +14,21 @@ export class QQMusicProvider implements MusicProvider {
   readonly platform = "qq" as const;
   private api: AxiosInstance;
   private cookie = "";
+  private quality = "exhigh";
 
   constructor(baseUrl: string) {
     this.api = axios.create({
       baseURL: baseUrl,
       timeout: 10000,
     });
+  }
+
+  setQuality(quality: string): void {
+    this.quality = quality;
+  }
+
+  getQuality(): string {
+    return this.quality;
   }
 
   private get cookieParams(): Record<string, string> {
@@ -48,7 +57,7 @@ export class QQMusicProvider implements MusicProvider {
     return { songs, playlists: [], albums: [] };
   }
 
-  async getSongUrl(songId: string): Promise<string | null> {
+  async getSongUrl(songId: string, _quality?: string): Promise<string | null> {
     const res = await this.api.get("/getMusicPlay", {
       params: { songmid: songId, ...this.cookieParams },
     });
