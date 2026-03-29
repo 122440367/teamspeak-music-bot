@@ -1,0 +1,164 @@
+<template>
+  <div class="search-page">
+    <div class="search-header">
+      <div class="search-input-wrap">
+        <Icon icon="mdi:magnify" class="search-icon" />
+        <input
+          ref="searchInput"
+          v-model="query"
+          class="search-input"
+          placeholder="搜索歌曲、歌手、专辑..."
+          @keyup.enter="doSearch"
+          autofocus
+        />
+      </div>
+      <div class="platform-toggle">
+        <button
+          class="platform-btn"
+          :class="{ active: platform === 'netease' }"
+          @click="platform = 'netease'; doSearch()"
+        >
+          网易云
+        </button>
+        <button
+          class="platform-btn"
+          :class="{ active: platform === 'qq' }"
+          @click="platform = 'qq'; doSearch()"
+        >
+          QQ音乐
+        </button>
+      </div>
+    </div>
+
+    <div v-if="loading" class="loading">搜索中...</div>
+
+    <div v-else-if="results.length > 0" class="results">
+      <SongCard
+        v-for="(song, i) in results"
+        :key="song.id"
+        :song="song"
+        :index="i + 1"
+        :active="store.currentSong?.id === song.id"
+        @play="store.play(song.name, song.platform)"
+        @add="store.addToQueue(song.name, song.platform)"
+      />
+    </div>
+
+    <div v-else-if="searched" class="empty">
+      未找到相关结果
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
+import { Icon } from '@iconify/vue';
+import axios from 'axios';
+import { usePlayerStore } from '../stores/player.js';
+import SongCard from '../components/SongCard.vue';
+
+const store = usePlayerStore();
+const route = useRoute();
+
+const query = ref((route.query.q as string) || '');
+const platform = ref<'netease' | 'qq'>('netease');
+const results = ref<Array<{ id: string; name: string; artist: string; album: string; duration: number; coverUrl: string; platform: string }>>([]);
+const loading = ref(false);
+const searched = ref(false);
+
+async function doSearch() {
+  if (!query.value.trim()) return;
+  loading.value = true;
+  searched.value = true;
+  try {
+    const res = await axios.get('/api/music/search', {
+      params: { q: query.value, platform: platform.value },
+    });
+    results.value = res.data.songs;
+  } catch {
+    results.value = [];
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  if (query.value) doSearch();
+});
+</script>
+
+<style lang="scss" scoped>
+.search-header {
+  margin-bottom: 24px;
+}
+
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  padding: 14px 20px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.search-icon {
+  font-size: 22px;
+  opacity: 0.4;
+  margin-right: 12px;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--text-primary);
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+.platform-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.platform-btn {
+  padding: 6px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--hover-bg);
+  opacity: 0.6;
+  transition: all var(--transition-fast);
+
+  &.active {
+    background: var(--color-primary);
+    color: white;
+    opacity: 1;
+  }
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+.empty {
+  text-align: center;
+  padding: 60px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+</style>

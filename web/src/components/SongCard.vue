@@ -1,0 +1,120 @@
+<template>
+  <div class="song-card" :class="{ active }" @dblclick="$emit('play')">
+    <div class="song-index">{{ index }}</div>
+    <CoverArt :url="song.coverUrl" :size="36" :radius="6" />
+    <div class="song-info">
+      <div class="song-name">{{ song.name }}</div>
+      <div class="song-artist">{{ song.artist }}</div>
+    </div>
+    <div class="song-album">{{ song.album }}</div>
+    <div class="song-duration">{{ formatDuration(song.duration) }}</div>
+    <div class="song-actions">
+      <button class="action-btn" @click.stop="$emit('play')" title="播放">
+        <Icon icon="mdi:play" />
+      </button>
+      <button class="action-btn" @click.stop="$emit('add')" title="添加到队列">
+        <Icon icon="mdi:playlist-plus" />
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Icon } from '@iconify/vue';
+import CoverArt from './CoverArt.vue';
+
+defineProps<{
+  song: { id: string; name: string; artist: string; album: string; duration: number; coverUrl: string; platform: string };
+  index: number;
+  active?: boolean;
+}>();
+
+defineEmits<{
+  play: [];
+  add: [];
+}>();
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+</script>
+
+<style lang="scss" scoped>
+.song-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--hover-bg);
+    .song-actions { opacity: 1; }
+  }
+
+  &.active {
+    background: rgba(51, 94, 234, 0.1);
+  }
+}
+
+.song-index {
+  width: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.song-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.song-name {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-artist {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.song-album {
+  width: 160px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-duration {
+  width: 48px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
+.song-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.action-btn {
+  font-size: 18px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+  &:hover { opacity: 1; }
+}
+</style>

@@ -1,0 +1,79 @@
+<template>
+  <div class="history-page">
+    <h1 class="page-title">播放历史</h1>
+
+    <div v-if="loading" class="loading">加载中...</div>
+
+    <div v-else-if="history.length === 0" class="empty">
+      暂无播放记录
+    </div>
+
+    <div v-else class="history-list">
+      <SongCard
+        v-for="(song, i) in history"
+        :key="`${song.id}-${i}`"
+        :song="song"
+        :index="i + 1"
+        :active="store.currentSong?.id === song.id"
+        @play="store.play(song.name, song.platform)"
+        @add="store.addToQueue(song.name, song.platform)"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue';
+import axios from 'axios';
+import { usePlayerStore } from '../stores/player.js';
+import SongCard from '../components/SongCard.vue';
+
+const store = usePlayerStore();
+
+const history = ref<Array<{ id: string; name: string; artist: string; album: string; duration: number; coverUrl: string; platform: string }>>([]);
+const loading = ref(true);
+
+onMounted(async () => {
+  if (!store.activeBotId) {
+    await store.fetchBots();
+  }
+
+  if (store.activeBotId) {
+    try {
+      const res = await axios.get(`/api/player/${store.activeBotId}/history`);
+      history.value = res.data.history;
+    } catch {
+      // Ignore if API not ready
+    }
+  }
+
+  loading.value = false;
+});
+</script>
+
+<style lang="scss" scoped>
+.page-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 24px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loading {
+  text-align: center;
+  padding: 60px;
+  color: var(--text-secondary);
+}
+
+.empty {
+  text-align: center;
+  padding: 80px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+</style>
