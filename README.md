@@ -302,12 +302,20 @@ A：`git pull` 拉取最新代码，然后 `npm install && npm run build && npm 
 
 ## 致谢
 
-- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) — UI 设计灵感
-- [TS3AudioBot](https://github.com/Splamy/TS3AudioBot) — 架构参考
-- [TS3AudioBot-NetEaseCloudmusic-plugin](https://github.com/ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plugin) — 懒加载设计参考
-- [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) — 网易云音乐 API
-- [@sansenjian/qq-music-api](https://github.com/sansenjian/qq-music-api) — QQ 音乐 API
-- [@honeybbq/teamspeak-client](https://www.npmjs.com/package/@honeybbq/teamspeak-client) — TS3 客户端协议实现
+感谢以下项目和开发者：
+
+| 项目 | 说明 |
+|------|------|
+| [Splamy/TS3AudioBot](https://github.com/Splamy/TS3AudioBot) | 优秀的 TeamSpeak 音频机器人框架 |
+| [TS3AudioBot-BiliBiliPlugin](https://github.com/Flavor-Scrap/TS3AudioBot-BiliBiliPlugin) | 提供插件开发参考 |
+| [TS3AudioBot-NetEaseCloudmusic-plugin](https://github.com/ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plugin) | 提供插件开发参考和懒加载设计参考 |
+| [TS3AudioBot-CloudMusic-plugin](https://github.com/DJmouton/TS3AudioBot-CloudMusic-plugin) | 提供插件开发参考 |
+| [TS3AudioBot-Plugin-Netease-QQ](https://github.com/scheissegansen/TS3AudioBot-Plugin-Netease-QQ) | 提供插件开发参考 |
+| [YesPlayMusic](https://github.com/qier222/YesPlayMusic) | UI 设计灵感 |
+| [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) | 网易云音乐 API 项目 |
+| [QQMusicApi](https://github.com/jsososo/QQMusicApi) | QQ 音乐 API 项目 |
+| [@sansenjian/qq-music-api](https://github.com/sansenjian/qq-music-api) | QQ 音乐 API 活跃维护版本 |
+| [@honeybbq/teamspeak-client](https://www.npmjs.com/package/@honeybbq/teamspeak-client) | TS3 完整客户端协议实现 |
 
 ## 开源许可
 
