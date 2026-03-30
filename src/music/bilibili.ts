@@ -161,6 +161,12 @@ export class BiliBiliProvider implements MusicProvider {
     const cached = this.cidCache.get(bvid);
     if (cached) return cached;
 
+    // Limit cache size to prevent unbounded growth
+    if (this.cidCache.size > 500) {
+      const firstKey = this.cidCache.keys().next().value;
+      if (firstKey) this.cidCache.delete(firstKey);
+    }
+
     const detail = await this.getSongDetail(bvid);
     if (!detail) return null;
     return this.cidCache.get(bvid) ?? null;
