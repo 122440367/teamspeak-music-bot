@@ -53,6 +53,20 @@ export class BiliBiliProvider implements MusicProvider {
     return str.replace(/<[^>]+>/g, "");
   }
 
+  /** Normalize B站 cover URL: fix protocol, add square crop via CDN param */
+  private normalizeCover(url: string): string {
+    if (!url) return "";
+    let fixed = url;
+    if (fixed.startsWith("//")) fixed = `https:${fixed}`;
+    else if (fixed.startsWith("http://")) fixed = fixed.replace("http://", "https://");
+    // B站 CDN supports @{w}w_{h}h_1c for center crop
+    // Append square crop if no @ params exist
+    if (!fixed.includes("@") && (fixed.includes("hdslb.com") || fixed.includes("bilibili.com"))) {
+      fixed += "@300w_300h_1c";
+    }
+    return fixed;
+  }
+
   async search(query: string, limit = 20): Promise<SearchResult> {
     const res = await this.api.get("/x/web-interface/search/type", {
       params: {
@@ -74,11 +88,7 @@ export class BiliBiliProvider implements MusicProvider {
           ? this.parseDurationString(v.duration)
           : v.duration
         : 0,
-      coverUrl: v.pic
-        ? v.pic.startsWith("//")
-          ? `https:${v.pic}`
-          : v.pic
-        : "",
+      coverUrl: this.normalizeCover(v.pic ?? ""),
       platform: "bilibili" as const,
     }));
 
@@ -115,7 +125,7 @@ export class BiliBiliProvider implements MusicProvider {
         artist: data.owner?.name ?? "",
         album: "",
         duration: data.duration ?? 0,
-        coverUrl: data.pic ?? "",
+        coverUrl: this.normalizeCover(data.pic ?? ""),
         platform: "bilibili" as const,
       };
     } catch {
